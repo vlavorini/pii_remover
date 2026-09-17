@@ -57,7 +57,6 @@ def test_sample_is_processed_and_cleaned(pipeline, filename, expected_kind):
         assert secret not in cleaned, f"{secret!r} leaked into the cleaned output"
 
     assert result.masking["total_masked"] > 0
-    assert result.description["markdown"]
 
 
 @pytest.mark.parametrize("filename,_kind", CASES)

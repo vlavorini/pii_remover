@@ -38,25 +38,24 @@ def test_health(client):
     assert payload["encryption_at_rest"] is True
 
 
-def test_index_renders_two_output_panels_and_architecture(client):
+def test_index_renders_output_panels_and_architecture(client):
     html = client.get("/").text
     assert "Cleaned data" in html
-    assert "Description of the cleaned data" in html
     assert "How this application works" in html
     assert "Ingestion" in html and "Processing" in html and "Output" in html
     assert "<details" in html  # collapsible sections
 
 
-def test_architecture_endpoint_lists_four_agents(client):
+def test_architecture_endpoint_lists_three_agents(client):
     payload = client.get("/api/architecture").json()
     names = [a["name"] for a in payload["agents"]]
-    assert names == ["detector", "critic", "masker", "describer"]
+    assert names == ["detector", "critic", "masker"]
     assert [s["name"] for s in payload["stages"]] == ["Ingestion", "Processing", "Output"]
 
 
 def test_prompts_endpoint_exposes_registry(client):
     payload = client.get("/api/prompts").json()
-    for name in ("pii_detector", "pii_critic", "pii_masker", "document_describer"):
+    for name in ("pii_detector", "pii_critic", "pii_masker"):
         assert name in payload["available"]
 
 
@@ -83,7 +82,7 @@ def test_rejects_oversized_file(client):
     assert "MAX_UPLOAD_MB" in response.text
 
 
-def test_full_upload_flow_returns_clean_text_and_description(client):
+def test_full_upload_flow_returns_clean_text(client):
     response = client.post(
         "/api/upload", files={"file": ("cv.txt", io.BytesIO(CV), "text/plain")}
     )
@@ -96,7 +95,6 @@ def test_full_upload_flow_returns_clean_text_and_description(client):
     cleaned = payload["masking"]["cleaned_text"]
     assert "mario.rossi@example.com" not in cleaned
     assert "Curriculum Vitae" in cleaned
-    assert payload["description"]["markdown"]
 
     # audit data exposed to the UI never contains raw PII
     assert "mario.rossi@example.com" not in str(payload["masking"]["changes"])
@@ -110,10 +108,14 @@ def test_downloads_are_available_after_completion(client):
     ).json()["job_id"]
     _wait_for_job(client, job_id)
 
-    for kind in ("cleaned", "description", "report"):
+    for kind in ("cleaned", "report"):
         response = client.get(f"/api/jobs/{job_id}/download", params={"kind": kind})
         assert response.status_code == 200
         assert response.content
+
+    # the description kind is gone: it must be a clean 400, not an empty 200
+    rejected = client.get(f"/api/jobs/{job_id}/download", params={"kind": "description"})
+    assert rejected.status_code == 400
 
 
 def test_unknown_job_is_404(client):

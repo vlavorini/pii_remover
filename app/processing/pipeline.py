@@ -1,4 +1,4 @@
-"""The orchestrated pipeline: ingestion -> detect/critique loop -> mask -> describe."""
+"""The orchestrated pipeline: ingestion -> detect/critique loop -> mask."""
 from __future__ import annotations
 
 import json
@@ -10,7 +10,6 @@ from ..core.crypto import ArtifactCipher
 from ..core.hashing import get_salt
 from ..core.llm import LLMClient
 from ..core.schemas import (
-    DocumentDescription,
     ExtractedDocument,
     JobResult,
     MaskResult,
@@ -22,7 +21,6 @@ from ..ingest.pipeline import IngestionStage
 from . import validators
 from .agents import (
     CriticAgent,
-    DescriberAgent,
     DetectorAgent,
     MaskerAgent,
     _mock_name_findings,
@@ -46,16 +44,39 @@ class DocumentPipeline:
         self.detector = DetectorAgent(settings, self.llm)
         self.critic = CriticAgent(settings, self.llm)
         self.masker = MaskerAgent(settings, self.llm)
-        self.describer = DescriberAgent(settings, self.llm)
 
     # ------------------------------------------------------------------ public
     def process(self, path: Path, *, filename: str | None = None,
-                mime_hint: str = "", job_id: str | None = None) -> JobResult:
+                mime_hint: str = "", job_id: str | None = None,
+                job: JobResult | None = None) -> JobResult:
         settings = self.settings
         trace = PipelineTrace()
-        result = JobResult(doc_id="", status="pending")
+        result = job if job is not None else JobResult(doc_id="", status="pending")
         if job_id:
             result.job_id = job_id
+
+        # Republish the trace back onto the shared job object as every stage
+        # completes, so the UI sees live progress instead of a frozen
+        # "processing" row (and a hung stage is visible where it hangs).
+        original_add = trace.add
+        original_finish = trace.finish
+
+        def _publish() -> None:
+            if job is not None:
+                job.trace = trace.to_dict()
+                job.status = result.status
+                job.error = result.error
+
+        def _add(stage: str, status: str, detail: str = "", **extra: Any) -> None:
+            original_add(stage, status, detail, **extra)
+            _publish()
+
+        def _finish() -> None:
+            original_finish()
+            _publish()
+
+        trace.add = _add  # type: ignore[method-assign]
+        trace.finish = _finish  # type: ignore[method-assign]
 
         try:
             # ── 1. ingestion ────────────────────────────────────────────────
@@ -114,17 +135,6 @@ class DocumentPipeline:
                 residual=len(residual),
             )
             result.masking = mask_result.to_dict()
-
-            # ── 5. description of the clean document ───────────────────────
-            trace.add("describe", "running", "describing the cleaned document")
-            description = self.describer.describe(
-                mask_result.cleaned_text,
-                document_type_guess=getattr(self.detector, "_last_type_guess", ""),
-                by_kind=mask_result.by_kind,
-                extraction_notes=document.extraction_notes,
-            )
-            trace.add("describe", "done", f"doc_type={description.doc_type}")
-            result.description = description.to_dict()
 
             result.status = "done"
             trace.finish()
@@ -325,7 +335,6 @@ def render_report(result: JobResult) -> str:
     """Human-readable, PII-free report (safe to share or export)."""
     extraction = result.extraction or {}
     masking = result.masking or {}
-    description = result.description or {}
     trace = result.trace or {}
 
     lines: list[str] = [
@@ -345,13 +354,33 @@ def render_report(result: JobResult) -> str:
         "",
     ]
     by_kind = masking.get("by_kind") or {}
+    changes = masking.get("changes") or []
     if by_kind:
-        for kind, count in sorted(by_kind.items(), key=lambda kv: -kv[1]):
-            lines.append(f"- {kind}: {count}")
+        lines += ["| category | count |", "| --- | --- |"]
+        for kind, count in sorted(by_kind.items(), key=lambda kv: (-kv[1], kv[0])):
+            lines.append(f"| {kind} | {count} |")
     else:
         lines.append("- none detected")
-    lines += ["", "## Description of the cleaned document", "",
-              (description.get("markdown") or description.get("summary") or "n/a").strip(), ""]
+
+    lines += [
+        "",
+        "## Redaction table",
+        "",
+        "Placeholders are stable per deployment: the same value always maps to the same",
+        "token, and the original cannot be recovered from it. Originals appear only as a",
+        "masked preview so this report stays safe to share.",
+        "",
+    ]
+    if changes:
+        lines += ["| redaction | type | original (masked) |", "| --- | --- | --- |"]
+        for change in sorted(changes, key=lambda c: (str(c.get("kind") or ""),
+                                                     str(c.get("placeholder") or ""))):
+            placeholder = str(change.get("placeholder") or "").replace("|", "\\|")
+            kind = str(change.get("kind") or "").replace("|", "\\|")
+            preview = str(change.get("original") or "").replace("|", "\\|") or "—"
+            lines.append(f"| `{placeholder}` | {kind} | `{preview}` |")
+    else:
+        lines.append("- none")
     if extraction.get("warnings"):
         lines += ["## Warnings", ""] + [f"- {w}" for w in extraction["warnings"]] + [""]
     lines += [

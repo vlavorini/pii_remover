@@ -40,7 +40,7 @@
       <div class="actions">
         <button id="run-btn" class="primary" type="button" disabled>Remove personal data</button>
         <span class="muted" id="run-hint">
-          The pipeline transcribes the file, runs detector ↔ critic until they agree, masks, then describes.
+          The pipeline transcribes the file, runs detector ↔ critic until they agree, then masks.
         </span>
       </div>
       <div class="progress hidden" id="progress">
@@ -54,7 +54,6 @@
       <h2 class="panel-title">2 · Results</h2>
       <div class="result-actions">
         <button class="ghost" data-download="cleaned">Download clean text</button>
-        <button class="ghost" data-download="description">Download description</button>
         <button class="ghost" data-download="report">Download report</button>
         <span class="muted" id="job-meta"></span>
       </div>
@@ -70,20 +69,6 @@
             <span class="muted" id="cleaned-stats"></span>
           </div>
           <pre class="output" id="cleaned-output"></pre>
-        </div>
-      </details>
-
-      <details class="collapsible" id="panel-description" open>
-        <summary>
-          <span class="sum-label">Description of the cleaned data <span class="badge" id="badge-desc"></span></span>
-          <span class="sum-hint">what this document is, produced after masking</span>
-        </summary>
-        <div class="collapsible-body">
-          <div class="toolbar">
-            <button class="ghost" type="button" data-copy="description">Copy</button>
-            <span class="muted" id="desc-type"></span>
-          </div>
-          <div class="output markdown" id="description-output"></div>
         </div>
       </details>
 
@@ -126,7 +111,6 @@
                 <li>Loop until agreement (max {{ config.maxCriticRounds }} rounds)</li>
                 <li><strong>Masker agent</strong> applies the plan, verified against leaks</li>
                 <li>Deterministic masking fallback (guaranteed)</li>
-                <li><strong>Describer agent</strong> describes the clean document</li>
               </ol>
             </div>
             <div class="arch-arrow">→</div>
@@ -134,7 +118,6 @@
               <h3>Output</h3>
               <ol>
                 <li>Cleaned text with stable pseudonyms</li>
-                <li>Description of the clean document</li>
                 <li>PII-free audit metadata</li>
                 <li>Encrypted artifacts, {{ config.retentionMinutes }} min retention</li>
               </ol>

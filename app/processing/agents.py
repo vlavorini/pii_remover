@@ -1,4 +1,4 @@
-"""The four cooperating agents: detector, critic, masker, describer."""
+"""The three cooperating agents: detector, critic, masker."""
 from __future__ import annotations
 
 import json
@@ -12,7 +12,6 @@ from ..core.hashing import pseudonym
 from ..core.llm import LLMClient, LLMError, extract_json
 from ..core.schemas import (
     Critique,
-    DocumentDescription,
     MaskChange,
     MaskResult,
     PiiFinding,
@@ -230,6 +229,14 @@ class MaskerAgent:
             log.warning("masker LLM failed (%s); using deterministic masking", exc)
             return _deterministic_mask(document, plan, notes=[f"masker fallback: {exc}"])
 
+        if not isinstance(payload, dict):
+            log.warning("masker returned %s, not an object; using deterministic masking",
+                        type(payload).__name__)
+            return _deterministic_mask(
+                document, plan,
+                notes=[f"masker fallback: unexpected {type(payload).__name__} payload"],
+            )
+
         cleaned = payload.get("cleaned_text") or ""
         residual = [r for r in payload.get("residual_pii") or [] if isinstance(r, dict)]
         # verify: every planned literal must be gone from the model output
@@ -246,61 +253,6 @@ class MaskerAgent:
         result.cleaned_text = cleaned
         result.residual_findings.extend(residual)
         return result
-
-
-# ══════════════════════════════════════════════════════════════════════ DESCRIBER
-@dataclass
-class DescriberAgent:
-    settings: Settings
-    llm: LLMClient
-    name: str = "describer"
-
-    def describe(
-        self,
-        cleaned_text: str,
-        *,
-        document_type_guess: str = "",
-        by_kind: dict[str, int] | None = None,
-        extraction_notes: list[str] | None = None,
-        max_chars: int = 40_000,
-    ) -> DocumentDescription:
-        doc_text, truncated = _clip(cleaned_text, max_chars)
-        if self.settings.app.mock_mode or not self.settings.llm.configured:
-            return _mock_description(doc_text, document_type_guess, truncated)
-
-        spec = prompt_registry.load("document_describer")
-        body = spec.render(
-            cleaned_document=doc_text,
-            document_type_guess=document_type_guess or "unknown",
-            sensitive_categories=json.dumps(by_kind or {}, ensure_ascii=False),
-            extraction_notes="; ".join(extraction_notes or []) or "none",
-        )
-        try:
-            payload, _ = self.llm.chat_json(
-                [
-                    {"role": "system", "content": spec.system},
-                    {"role": "user", "content": body},
-                ],
-                model=self.settings.llm.text_model,
-                temperature=0.0,
-            )
-        except LLMError as exc:
-            log.warning("describer failed: %s", exc)
-            return _mock_description(doc_text, document_type_guess, truncated,
-                                     error=str(exc))
-
-        description = DocumentDescription(
-            doc_type=str(payload.get("doc_type") or document_type_guess or "unknown"),
-            summary=str(payload.get("summary") or "").strip(),
-            salient_points=[str(p) for p in payload.get("salient_points") or []],
-            structure=payload.get("structure") or {},
-        )
-        if payload.get("sensitivity_profile"):
-            description.structure["sensitivity_profile"] = payload["sensitivity_profile"]
-        if payload.get("suggested_next_steps"):
-            description.structure["suggested_next_steps"] = payload["suggested_next_steps"]
-        description.markdown = render_description_markdown(description)
-        return description
 
 
 # ═══════════════════════════════════════════════════════════════════════ helpers
@@ -616,83 +568,3 @@ def _mock_critique(findings: list[PiiFinding], round_index: int) -> Critique:
         feedback=["mock mode: critic accepted the detector output"],
     )
 
-
-def _mock_description(text: str, doc_type_guess: str, truncated: bool,
-                      error: str = "") -> DocumentDescription:
-    words = len(text.split())
-    columns: list[str] = []
-    row_count: int | None = None
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("|") and stripped.endswith("|") and "---" not in stripped:
-            cells = [c.strip() for c in stripped.strip("|").split("|")]
-            if cells and not columns:
-                columns = cells
-        if stripped.startswith("rows:"):
-            try:
-                row_count = int(stripped.split(":", 1)[1].strip())
-            except ValueError:
-                row_count = None
-    structure: dict[str, Any] = {
-        "sections": [line.strip() for line in text.splitlines() if line.strip().startswith("## ")][:20],
-        "columns": columns,
-        "row_count": row_count,
-        "language": "unknown",
-        "word_count": words,
-    }
-    if error:
-        structure["error"] = error
-    if truncated:
-        structure["note"] = "clean document was truncated for the describer"
-    description = DocumentDescription(
-        doc_type=doc_type_guess or "unknown",
-        summary=(
-            "Offline description (no LLM call was made). "
-            f"The clean document contains {words} words across "
-            f"{len(text.splitlines())} lines"
-            + (f", and {len(columns)} columns were detected in a table." if columns else ".")
-        ),
-        salient_points=[
-            "Deterministic fallback description generated without a model call.",
-            f"Detected document type guess: {doc_type_guess or 'unknown'}.",
-            f"Rough size: {words} words, {len(text.splitlines())} lines.",
-        ],
-        structure=structure,
-    )
-    description.markdown = render_description_markdown(description)
-    return description
-
-
-def render_description_markdown(description: DocumentDescription) -> str:
-    lines: list[str] = [f"### Document type: {description.doc_type}", ""]
-    lines.append(description.summary.strip())
-    lines.append("")
-    if description.salient_points:
-        lines.append("**Salient points**")
-        lines.append("")
-        for point in description.salient_points:
-            lines.append(f"- {point}")
-        lines.append("")
-    structure = description.structure or {}
-    if structure.get("columns"):
-        lines.append(f"**Columns ({len(structure['columns'])})**: "
-                     + ", ".join(f"`{c}`" for c in structure["columns"]))
-        lines.append("")
-    if structure.get("row_count") is not None:
-        lines.append(f"**Data rows**: {structure['row_count']}")
-        lines.append("")
-    if structure.get("sections"):
-        lines.append("**Sections**: " + ", ".join(str(s) for s in structure["sections"][:12]))
-        lines.append("")
-    if structure.get("language"):
-        lines.append(f"**Language**: {structure['language']}")
-        lines.append("")
-    if structure.get("sensitivity_profile"):
-        lines.append(f"**Sensitivity**: {structure['sensitivity_profile']}")
-        lines.append("")
-    if structure.get("suggested_next_steps"):
-        lines.append("**Suggested next steps**")
-        lines.append("")
-        for step in structure["suggested_next_steps"]:
-            lines.append(f"- {step}")
-    return "\n".join(lines).strip()

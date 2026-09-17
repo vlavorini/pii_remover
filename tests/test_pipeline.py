@@ -59,19 +59,18 @@ def test_pipeline_records_rounds_and_trace(tmp_path):
     assert result.detections_rounds, "the critic loop must record its rounds"
     assert result.detections_rounds[0]["accepted"] is True
     stages = [s["stage"] for s in result.trace["stages"]]
-    for expected in ("ingest", "validators", "detect", "critique", "mask", "describe"):
+    for expected in ("ingest", "validators", "detect", "critique", "mask"):
         assert expected in stages
 
 
-def test_pipeline_produces_description_and_clean_text(tmp_path):
+def test_pipeline_masks_and_returns_clean_text(tmp_path):
     source = tmp_path / "cv.txt"
     source.write_text(CV, encoding="utf-8")
     result = _pipeline().process(source, filename="cv.txt")
 
-    description = result.description
-    assert description["markdown"]
-    assert description["doc_type"]
+    assert result.status == "done", result.error
     assert result.masking["total_masked"] > 0
+    assert "mario.rossi@example.com" not in result.masking["cleaned_text"]
     assert set(result.masking["by_kind"]).issubset(
         set(__import__("app.core.schemas", fromlist=["PII_KINDS"]).PII_KINDS)
     )

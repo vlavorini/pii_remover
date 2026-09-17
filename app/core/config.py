@@ -1,8 +1,10 @@
 """Central configuration, loaded from environment (.env in dev, env_file in Docker)."""
 from __future__ import annotations
 
+import json
 import os
-from dataclasses import dataclass, field
+import logging
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 try:  # optional in prod (env vars already injected), required for local runs
@@ -38,6 +40,8 @@ def _env_float(name: str, default: float) -> float:
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
+log = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class LLMSettings:
@@ -47,12 +51,45 @@ class LLMSettings:
     api_key: str = field(default_factory=lambda: _env("OPENAI_API_KEY"))
     vision_model: str = field(default_factory=lambda: _env("VISION_MODEL", "gpt-4o"))
     text_model: str = field(default_factory=lambda: _env("TEXT_MODEL", "gpt-4o-mini"))
-    timeout_seconds: float = field(default_factory=lambda: _env_float("LLM_TIMEOUT_SECONDS", 120.0))
+    timeout_seconds: float = field(default_factory=lambda: _env_float("LLM_TIMEOUT_SECONDS", 180.0))
     max_retries: int = field(default_factory=lambda: _env_int("LLM_MAX_RETRIES", 2))
+    #: output token ceiling per call; a reasoning model spends this on its trace first
+    max_tokens: int = field(default_factory=lambda: _env_int("LLM_MAX_TOKENS", 1500))
+    #: runtime context the server was started with (llama.cpp --ctx-size), used to
+    #: warn before a prompt silently overflows. 0 disables the check.
+    context_window: int = field(default_factory=lambda: _env_int("LLM_CONTEXT_WINDOW", 0))
+    #: ask the server to skip the model's reasoning trace where it supports it.
+    #: On llama.cpp this is chat_template_kwargs.enable_thinking, worth ~8x the
+    #: output budget; on other providers it is omitted entirely.
+    disable_thinking: bool = field(default_factory=lambda: _env_bool("LLM_DISABLE_THINKING", False))
+    #: query params for the thinking switch, JSON; empty = strip the field
+    thinking_kwargs: str = field(
+        default_factory=lambda: _env("LLM_THINKING_KWARGS", '{"chat_template_kwargs":{"enable_thinking":false}}')
+    )
 
     @property
     def configured(self) -> bool:
         return bool(self.api_key)
+
+    @property
+    def thinking_payload(self) -> dict[str, Any]:
+        """Extra request fields that switch the reasoning trace off.
+
+        Providers that do not understand these keys ignore them, and providers
+        that reject unknown fields are handled by LLMClient.chat, which retries
+        once without them.
+        """
+        if not self.disable_thinking:
+            return {}
+        raw = self.thinking_kwargs.strip()
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            log.warning("LLM_THINKING_KWARGS is not valid JSON, ignoring: %s", raw[:120])
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
 
 
 @dataclass(frozen=True)

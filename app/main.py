@@ -86,7 +86,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="PII Remover",
         version="1.0.0",
-        description="Ingestion -> agentic PII detection -> masking -> description.",
+        description="Ingestion -> agentic PII detection -> masking.",
         root_path=settings.app.root_path,
         lifespan=lifespan,
         docs_url="/api/docs",
@@ -222,11 +222,8 @@ def create_app() -> FastAPI:
             from .processing.pipeline import render_report
 
             payload, filename, media = render_report(job), f"{job_id}.report.md", "text/markdown"
-        elif kind == "description":
-            payload = (job.description or {}).get("markdown", "")
-            filename, media = f"{job_id}.description.md", "text/markdown"
         else:
-            raise HTTPException(status_code=400, detail="kind must be cleaned|report|description")
+            raise HTTPException(status_code=400, detail="kind must be cleaned|report")
         from fastapi.responses import Response
 
         return Response(
@@ -264,14 +261,12 @@ def create_app() -> FastAPI:
                         f"agreement threshold {cfg.processing.agreement_threshold}",
                         "Masker agent: applies the plan, verified against leaks",
                         f"Deterministic masking fallback (style={cfg.processing.mask_style})",
-                        "Describer agent: describes the clean document by type",
                     ],
                 },
                 {
                     "name": "Output",
                     "components": [
                         "Cleaned text (PII replaced by stable pseudonyms)",
-                        "Description of the cleaned document",
                         "Audit metadata: masked categories, rounds, warnings - no raw PII",
                         f"Encryption at rest: {'on' if cfg.privacy.encrypt_artifacts else 'off'}, "
                         f"retention {cfg.privacy.retention_minutes} min",
@@ -285,8 +280,6 @@ def create_app() -> FastAPI:
                  "prompt": "pii_critic.md", "responsibility": "verify and send feedback"},
                 {"name": "masker", "model": cfg.llm.text_model,
                  "prompt": "pii_masker.md", "responsibility": "apply the masking plan"},
-                {"name": "describer", "model": cfg.llm.text_model,
-                 "prompt": "document_describer.md", "responsibility": "describe clean data"},
             ],
             "privacy": {
                 "transport": "TLS terminated at the reverse proxy (Traefik)",
@@ -335,7 +328,8 @@ def _run_job(job_id: str, path: Path, filename: str, mime: str) -> None:
         settings.privacy.encryption_key, enabled=settings.privacy.encrypt_artifacts
     )
     try:
-        result = pipeline.process(path, filename=filename, mime_hint=mime, job_id=job_id)
+        result = pipeline.process(path, filename=filename, mime_hint=mime,
+                                  job=job, job_id=job_id)
         result.doc_id = result.doc_id or job.doc_id
         paths = pipeline.persist(result, cipher, settings.app.output_dir)
         result.encryption = {
@@ -343,11 +337,15 @@ def _run_job(job_id: str, path: Path, filename: str, mime: str) -> None:
             "artifacts": list(paths.values()),
         }
         JOBS[job_id] = result
+        log.info("job %s finished with status=%s", job_id, result.status)
     except Exception as exc:  # noqa: BLE001
         log.exception("job %s failed", job_id)
-        job.status = "error"
-        job.error = f"{type(exc).__name__}: {exc}"
-        JOBS[job_id] = job
+        # keep whatever the pipeline already published in JOBS rather than
+        # reverting the customer to a bare "processing" state
+        pub = JOBS.get(job_id, job)
+        pub.status = "error"
+        pub.error = f"{type(exc).__name__}: {exc}"
+        JOBS[job_id] = pub
     finally:
         path.unlink(missing_ok=True)  # never keep the raw upload in plaintext
 

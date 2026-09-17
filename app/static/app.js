@@ -23,9 +23,6 @@
     cleanedOut: $("cleaned-output"),
     cleanedStats: $("cleaned-stats"),
     badgeCleaned: $("badge-cleaned"),
-    descOut: $("description-output"),
-    badgeDesc: $("badge-desc"),
-    descType: $("desc-type"),
     audit: $("audit-body"),
     jobMeta: $("job-meta"),
     archRuntime: $("arch-runtime"),
@@ -59,40 +56,6 @@
   function clearError() {
     el.errorBox.textContent = "";
     show(el.errorBox, false);
-  }
-
-  /* Minimal, safe markdown renderer for the description panel. */
-  function renderMarkdown(text) {
-    const lines = String(text || "").split("\n");
-    let html = "";
-    let inList = false;
-    const inline = (s) =>
-      esc(s)
-        .replace(/`([^`]+)`/g, "<code>$1</code>")
-        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-
-    for (const raw of lines) {
-      const line = raw.replace(/\s+$/, "");
-      if (/^\s*[-*]\s+/.test(line)) {
-        if (!inList) {
-          html += "<ul>";
-          inList = true;
-        }
-        html += "<li>" + inline(line.replace(/^\s*[-*]\s+/, "")) + "</li>";
-        continue;
-      }
-      if (inList) {
-        html += "</ul>";
-        inList = false;
-      }
-      if (/^###\s+/.test(line)) html += "<h3>" + inline(line.slice(4)) + "</h3>";
-      else if (/^##\s+/.test(line)) html += "<h2>" + inline(line.slice(3)) + "</h2>";
-      else if (/^#\s+/.test(line)) html += "<h1>" + inline(line.slice(2)) + "</h1>";
-      else if (line.trim() === "") html += "";
-      else html += "<p>" + inline(line) + "</p>";
-    }
-    if (inList) html += "</ul>";
-    return html;
   }
 
   /* --------------------------------------------------------------- upload */
@@ -194,7 +157,6 @@
       "detector agent: enumerating PII…",
       "critic agent: checking the detection…",
       "masking agreed findings…",
-      "describer agent: describing the clean document…",
     ];
     const pct = Math.min(92, 16 + attempt * 6);
     setProgress(pct, stages[Math.min(stages.length - 1, Math.floor(attempt / 3))]);
@@ -230,7 +192,6 @@
     currentJob = data.job_id;
     const masking = data.masking || {};
     const extraction = data.extraction || {};
-    const description = data.description || {};
     const trace = data.trace || {};
 
     el.cleanedOut.textContent = masking.cleaned_text || "(empty)";
@@ -239,10 +200,6 @@
     el.badgeCleaned.textContent = masked + " masked";
     el.cleanedStats.textContent =
       bytes.toLocaleString() + " characters · " + masked + " distinct value(s) replaced";
-
-    el.descOut.innerHTML = renderMarkdown(description.markdown || description.summary || "(none)");
-    el.badgeDesc.textContent = description.doc_type || "unknown";
-    el.descType.textContent = "type: " + (description.doc_type || "unknown");
 
     el.jobMeta.textContent =
       "job " + data.job_id.slice(0, 14) + "… · " + (trace.duration_seconds || "?") + " s · " +
@@ -262,8 +219,7 @@
     document.querySelectorAll("[data-copy]").forEach((btn) => {
       btn.onclick = async () => {
         const which = btn.dataset.copy;
-        const text =
-          which === "cleaned" ? masking.cleaned_text || "" : description.markdown || "";
+        const text = masking.cleaned_text || "";
         try {
           await navigator.clipboard.writeText(text);
           const original = btn.textContent;
@@ -296,6 +252,33 @@
       html += "</tbody></table>";
     } else {
       html += "<p class='muted'>No PII categories were matched.</p>";
+    }
+
+    html += "<h3>Redaction table</h3>";
+    const changes = masking.changes || [];
+    if (changes.length) {
+      html +=
+        '<table class="audit"><thead><tr><th>Redaction</th><th>Type</th>' +
+        "<th>Original (masked)</th></tr></thead><tbody>";
+      changes
+        .slice()
+        .sort((a, b) => {
+          const k = (a.kind || "").localeCompare(b.kind || "");
+          return k !== 0 ? k : (a.placeholder || "").localeCompare(b.placeholder || "");
+        })
+        .forEach((c) => {
+          html +=
+            "<tr><td class='mono'>" + esc(c.placeholder || "\u2014") +
+            "</td><td class='mono'>" + esc(c.kind || "OTHER") +
+            "</td><td class='mono'>" + esc(c.original || "\u2014") + "</td></tr>";
+        });
+      html += "</tbody></table>";
+      html +=
+        "<p class='muted'>Placeholders are stable per deployment: the same value always " +
+        "maps to the same token and cannot be reversed. Originals are shown as a masked " +
+        "preview so this table stays safe to share.</p>";
+    } else {
+      html += "<p class='muted'>No redactions were applied.</p>";
     }
 
     html += "<h3>Detector / critic rounds</h3>";

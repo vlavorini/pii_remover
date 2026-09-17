@@ -157,20 +157,6 @@ class MaskResult:
 
 
 @dataclass
-class DocumentDescription:
-    """Generic description produced by the describer agent."""
-
-    doc_type: str = "unknown"
-    summary: str = ""
-    salient_points: list[str] = field(default_factory=list)
-    structure: dict[str, Any] = field(default_factory=dict)
-    markdown: str = ""
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass
 class PipelineTrace:
     """Step-by-step record rendered in the Architecture panel."""
 
@@ -212,7 +198,6 @@ class JobResult:
     error: str = ""
     extraction: dict[str, Any] = field(default_factory=dict)
     masking: dict[str, Any] = field(default_factory=dict)
-    description: dict[str, Any] = field(default_factory=dict)
     trace: dict[str, Any] = field(default_factory=dict)
     detections_rounds: list[dict[str, Any]] = field(default_factory=list)
     encryption: dict[str, Any] = field(default_factory=dict)
