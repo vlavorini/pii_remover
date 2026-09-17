@@ -1,0 +1,12 @@
+date,invoice,customer,service,amount,currency,status
+note: contact billing at billing@example.com or +39 02 1234567
+2024-01-05,INV-2024-001,Acme Analytics S.r.l.,Consulting,12,500.00,EUR,paid
+2024-01-11,INV-2024-002,Beta Consulting S.p.A.,Licence fee,3,200.00,EUR,paid
+2024-01-18,INV-2024-003,Gamma Retail Ltd,Implementation,48,000.00,GBP,open
+2024-01-24,INV-2024-004,Delta Finance AG,Support,9,750.00,CHF,paid
+2024-02-02,INV-2024-005,Epsilon Media S.r.l.,Training,5,400.00,EUR,overdue
+2024-02-09,INV-2024-006,Zeta Logistics GmbH,Integration,22,300.00,EUR,open
+2024-02-15,INV-2024-007,Eta Retail Ltd,Audit,15,000.00,GBP,paid
+2024-02-21,INV-2024-008,Theta Health S.r.l.,Consulting,7,850.00,EUR,open
+2024-03-01,INV-2024-009,Iota Bank SA,Implementation,61,000.00,EUR,paid
+2024-03-08,INV-2024-010,Kappa Manufacturing,Support,4,120.00,EUR,overdue

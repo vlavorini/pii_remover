@@ -1,0 +1,33 @@
+STATEMENT OF ACCOUNT
+
+Account holder: Giulia Bianchi
+Account number: 000012345678
+IBAN: DE89370400440532013000
+BIC: COBADEFFXXX
+Statement period: 01/01/2024 - 31/01/2024
+Tax ID: BNCGLI90A41F205X
+
+SUMMARY
+Opening balance: 4,120.55 EUR
+Closing balance: 3,890.10 EUR
+Total credits: 2,450.00 EUR
+Total debits: 2,680.45 EUR
+
+MOVEMENTS
+
+| Date | Value date | Description | Counterparty | Amount |
+| --- | --- | --- | --- | --- |
+| 03/01/2024 | 03/01/2024 | Salary January | Acme Analytics S.r.l. | 2,450.00 |
+| 07/01/2024 | 07/01/2024 | Rent January | Immobiliare Sole | -1,200.00 |
+| 12/01/2024 | 12/01/2024 | Card payment | Supermarket Milano | -184.20 |
+| 15/01/2024 | 15/01/2024 | Transfer out | IT60X0542811101000000123456 | -600.00 |
+| 21/01/2024 | 21/01/2024 | Utility bill | Enel Energia | -96.25 |
+| 28/01/2024 | 28/01/2024 | Card payment | Trattoria da Gino | -600.00 |
+
+CONTACTS
+Your personal advisor: Dott. Paolo Ferrari
+Phone: +39 02 87654321
+Email: paolo.ferrari@bank.example
+
+Unless you notify us of any error within 60 days, this statement is considered
+approved. For assistance call 800 123 456 or write to assistenza@bank.example.

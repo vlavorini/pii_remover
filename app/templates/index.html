@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PII Remover</title>
+  <link rel="stylesheet" href="{{ config.rootPath }}/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◧</span>
+      <div>
+        <h1>PII Remover</h1>
+        <p class="tagline">Ingest any document · detect personal data with cooperating agents · get clean data back</p>
+      </div>
+    </div>
+    <div class="status-chips" id="status-chips">
+      <span class="chip" id="chip-llm" title="Text model used by the agents">text: {{ config.textModel }}</span>
+      <span class="chip" id="chip-vision" title="Vision model used for extraction">vision: {{ config.visionModel }}</span>
+      <span class="chip" id="chip-enc" title="Artifacts are encrypted on disk">encryption: {{ 'on' if config.encryptionEnabled else 'off' }}</span>
+      <span class="chip chip-mock {{ '' if config.mockMode else 'hidden' }}" title="No network calls to a model">MOCK MODE</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel" id="upload-panel">
+      <h2 class="panel-title">1 · Upload a document</h2>
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload a file">
+        <input type="file" id="file-input" hidden
+               accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.txt,.md,.csv,.tsv,.json,.yaml,.yml,.log,.rtf,.html,.htm,.xml,.xlsx,.xlsm,.xls,.ods,.docx,.odt,.pptx,.epub" />
+        <p class="dz-main">Drop a file here, or <span class="link">browse</span></p>
+        <p class="dz-sub">PDF, image, text, spreadsheet or office document · max {{ config.maxUploadMb }} MB</p>
+      </div>
+      <div class="file-meta hidden" id="file-meta">
+        <span id="file-name"></span>
+        <span id="file-size" class="muted"></span>
+        <button id="clear-file" class="ghost" type="button">remove</button>
+      </div>
+      <div class="actions">
+        <button id="run-btn" class="primary" type="button" disabled>Remove personal data</button>
+        <span class="muted" id="run-hint">
+          The pipeline transcribes the file, runs detector ↔ critic until they agree, masks, then describes.
+        </span>
+      </div>
+      <div class="progress hidden" id="progress">
+        <div class="bar"><div class="bar-fill" id="bar-fill"></div></div>
+        <p class="muted" id="progress-text">starting…</p>
+      </div>
+      <div class="error hidden" id="error-box"></div>
+    </section>
+
+    <section class="panel hidden" id="results-panel">
+      <h2 class="panel-title">2 · Results</h2>
+      <div class="result-actions">
+        <button class="ghost" data-download="cleaned">Download clean text</button>
+        <button class="ghost" data-download="description">Download description</button>
+        <button class="ghost" data-download="report">Download report</button>
+        <span class="muted" id="job-meta"></span>
+      </div>
+
+      <details class="collapsible" id="panel-clean" open>
+        <summary>
+          <span class="sum-label">Cleaned data <span class="badge" id="badge-cleaned"></span></span>
+          <span class="sum-hint">document with personal data replaced</span>
+        </summary>
+        <div class="collapsible-body">
+          <div class="toolbar">
+            <button class="ghost" type="button" data-copy="cleaned">Copy</button>
+            <span class="muted" id="cleaned-stats"></span>
+          </div>
+          <pre class="output" id="cleaned-output"></pre>
+        </div>
+      </details>
+
+      <details class="collapsible" id="panel-description" open>
+        <summary>
+          <span class="sum-label">Description of the cleaned data <span class="badge" id="badge-desc"></span></span>
+          <span class="sum-hint">what this document is, produced after masking</span>
+        </summary>
+        <div class="collapsible-body">
+          <div class="toolbar">
+            <button class="ghost" type="button" data-copy="description">Copy</button>
+            <span class="muted" id="desc-type"></span>
+          </div>
+          <div class="output markdown" id="description-output"></div>
+        </div>
+      </details>
+
+      <details class="collapsible" id="panel-audit">
+        <summary>
+          <span class="sum-label">Audit trail</span>
+          <span class="sum-hint">what was masked, how many rounds, which warnings</span>
+        </summary>
+        <div class="collapsible-body">
+          <div id="audit-body"></div>
+        </div>
+      </details>
+    </section>
+
+    <section class="panel" id="architecture-panel">
+      <h2 class="panel-title">3 · Architecture</h2>
+      <details class="collapsible" id="panel-arch">
+        <summary>
+          <span class="sum-label">How this application works</span>
+          <span class="sum-hint">ingestion · processing agents · output</span>
+        </summary>
+        <div class="collapsible-body">
+          <div class="arch-diagram">
+            <div class="arch-col">
+              <h3>Ingestion</h3>
+              <ol>
+                <li>Upload guard: extension + size validation, streaming write</li>
+                <li>Converter: PDF, image, text, spreadsheet, office</li>
+                <li>Visual LLM transcription (primary) with text-layer fallback</li>
+                <li>Normalisation: unicode NFC, de-hyphenation, whitespace</li>
+              </ol>
+            </div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-col">
+              <h3>Processing</h3>
+              <ol>
+                <li>Validator layer: regex + checksums (IBAN mod-97, Luhn, codice fiscale)</li>
+                <li><strong>Detector agent</strong> enumerates PII spans</li>
+                <li><strong>Critic agent</strong> finds misses / false positives, sends feedback</li>
+                <li>Loop until agreement (max {{ config.maxCriticRounds }} rounds)</li>
+                <li><strong>Masker agent</strong> applies the plan, verified against leaks</li>
+                <li>Deterministic masking fallback (guaranteed)</li>
+                <li><strong>Describer agent</strong> describes the clean document</li>
+              </ol>
+            </div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-col">
+              <h3>Output</h3>
+              <ol>
+                <li>Cleaned text with stable pseudonyms</li>
+                <li>Description of the clean document</li>
+                <li>PII-free audit metadata</li>
+                <li>Encrypted artifacts, {{ config.retentionMinutes }} min retention</li>
+              </ol>
+            </div>
+          </div>
+          <div class="arch-note">
+            <p><strong>Privacy:</strong> TLS is terminated by the reverse proxy. Artifacts are
+              encrypted at rest (Fernet / AES-128-CBC + HMAC) and the raw upload is deleted as soon as
+              the job finishes. Pseudonyms are keyed HMAC-SHA256, so they are not reversible.
+              No personal data is written to logs.</p>
+            <p><strong>Models:</strong> every call is OpenAI-compatible and fully configured from
+              <code>.env</code> (<code>OPENAI_BASE_URL</code>, <code>OPENAI_API_KEY</code>,
+              <code>VISION_MODEL</code>, <code>TEXT_MODEL</code>). Prompts live in
+              <code>app/processing/prompts/*.md</code>.</p>
+          </div>
+          <div id="arch-runtime" class="arch-runtime"></div>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <span class="muted">pii-remover · v1.0.0 · local test build</span>
+  </footer>
+
+  <script>
+    window.PII_CONFIG = {{ config | tojson }};
+  </script>
+  <script src="{{ config.rootPath }}/static/app.js"></script>
+</body>
+</html>

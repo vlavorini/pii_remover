@@ -1,0 +1,40 @@
+Curriculum Vitae
+
+PERSONAL DETAILS
+Name: Mario Rossi
+Date of birth: 14/03/1985
+Place of birth: Milano (MI)
+Nationality: Italian
+Address: Via Roma 42, 20100 Milano, Italy
+Email: mario.rossi@example.com
+Mobile: +39 333 1234567
+Codice Fiscale: RSSMRA85C14F205Z
+IBAN: IT60X0542811101000000123456
+
+PROFESSIONAL SUMMARY
+Senior data engineer with 9 years of experience building batch and streaming
+pipelines for financial services and retail clients.
+
+WORK EXPERIENCE
+
+2019 - present | Acme Analytics S.r.l., Milano
+Senior Data Engineer
+- Led the migration of 40+ ETL jobs to Spark, cutting nightly runtime by 62%.
+- Designed the streaming ingestion layer for 1.2 billion events per month.
+
+2015 - 2019 | Beta Consulting S.p.A., Torino
+Data Engineer
+- Built the warehouse for a 3 TB retail reporting platform.
+
+EDUCATION
+2012 - 2015 | Politecnico di Milano
+MSc in Computer Engineering, 110/110 cum laude
+
+SKILLS
+Python, Spark, Kafka, SQL, Airflow, AWS, Terraform
+
+LANGUAGES
+Italian (native), English (C1), German (B1)
+
+REFERENCES
+Prof. Laura Conti - laura.conti@unimi.example.it - +39 02 5551234

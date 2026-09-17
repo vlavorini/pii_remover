@@ -1,0 +1,91 @@
+# ──────────────────────────────────────────────────────────────────────
+# PII Remover - PRODUCTION deployment fragment
+#
+# This file is meant to be merged into (or run alongside) the existing
+# reverse proxy stack at /home/ubuntu/backend_orchestra/docker_compose.yml.
+# It reuses that stack's Traefik instance through the external `backend_orchestra_default`
+# network and the `myresolver` certificate resolver, so no new proxy is created.
+#
+#   cd /home/ubuntu/backend_orchestra
+#   docker compose -f docker_compose.yml -f pii_remover/docker-compose.pii_remover.yml up -d
+#
+# Public URL: https://ns3062692.ip-193-70-34.eu/pii_remover
+# ──────────────────────────────────────────────────────────────────────
+services:
+  pii_remover:
+    build:
+      context: ./pii_remover
+      dockerfile: Dockerfile
+    image: pii_remover:1.0.0
+    container_name: pii_remover
+    restart: unless-stopped
+    # loopback-only publish: reachable for debugging, never exposed directly
+    ports:
+      - "127.0.0.1:8035:8000"
+    env_file:
+      - ./pii_remover/.env
+    environment:
+      UPLOAD_DIR: /data/uploads
+      OUTPUT_DIR: /data/outputs
+      SCRATCH_DIR: /data/scratch
+      PORT: "8000"
+      # Traefik strips /pii_remover before forwarding; the app must generate
+      # its own asset/API links with the same prefix.
+      ROOT_PATH: /pii_remover
+      # TLS terminates at Traefik: the container itself sees plain HTTP
+      FORCE_HTTPS: "false"
+      TRUST_PROXY_HEADERS: "true"
+      PSEUDONYM_SALT: ${PSEUDONYM_SALT:-change-me-per-deployment}
+    volumes:
+      - pii_remover_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
+      interval: 60s
+      timeout: 10s
+      start_period: 20s
+      retries: 5
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=backend_orchestra_default"
+      # --- HTTPS router (the public URL) ---
+      - "traefik.http.routers.pii_remover.rule=Host(`ns3062692.ip-193-70-34.eu`) && PathPrefix(`/pii_remover`)"
+      - "traefik.http.routers.pii_remover.entrypoints=websecure"
+      - "traefik.http.routers.pii_remover.tls.certresolver=myresolver"
+      - "traefik.http.routers.pii_remover.middlewares=pii_remover-stripprefix,pii_remover-headers"
+      - "traefik.http.routers.pii_remover.service=pii_remover"
+      # --- HTTP -> HTTPS redirect for this path only ---
+      - "traefik.http.routers.pii_remover-http.rule=Host(`ns3062692.ip-193-70-34.eu`) && PathPrefix(`/pii_remover`)"
+      - "traefik.http.routers.pii_remover-http.entrypoints=web"
+      - "traefik.http.routers.pii_remover-http.middlewares=pii_remover-redirect"
+      - "traefik.http.routers.pii_remover-http.service=pii_remover"
+      # --- service / port ---
+      - "traefik.http.services.pii_remover.loadbalancer.server.port=8000"
+      # --- middlewares ---
+      - "traefik.http.middlewares.pii_remover-stripprefix.stripprefix.prefixes=/pii_remover"
+      - "traefik.http.middlewares.pii_remover-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.pii_remover-redirect.redirectscheme.permanent=true"
+      - "traefik.http.middlewares.pii_remover-headers.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.pii_remover-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.pii_remover-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.pii_remover-headers.headers.frameDeny=true"
+      - "traefik.http.middlewares.pii_remover-headers.headers.referrerPolicy=same-origin"
+      # uploads can be slow: raise the response/body limits for this route
+      - "traefik.http.middlewares.pii_remover-buffering.buffering.maxRequestBodyBytes=52428800"
+    networks:
+      - backend_orchestra_default
+
+volumes:
+  pii_remover_data:
+    name: pii_remover_data
+
+networks:
+  # the network Traefik listens on, created by the existing stack
+  backend_orchestra_default:
+    external: true

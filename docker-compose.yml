@@ -1,0 +1,51 @@
+# ──────────────────────────────────────────────────────────────────────
+# PII Remover - local development / test stack
+#
+#   docker compose up --build
+#   -> http://127.0.0.1:8000
+#
+# For the production deployment behind the existing Traefik reverse proxy see
+# deploy/docker-compose.pii_remover.yml and deploy/README.md.
+# ──────────────────────────────────────────────────────────────────────
+services:
+  pii-remover:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pii-remover:local
+    container_name: pii_remover_local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      # container-internal paths and prefix
+      UPLOAD_DIR: /data/uploads
+      OUTPUT_DIR: /data/outputs
+      SCRATCH_DIR: /data/scratch
+      PORT: "8000"
+      ROOT_PATH: ""
+      # local runs are plain HTTP on loopback
+      FORCE_HTTPS: "false"
+      MOCK_MODE: "${MOCK_MODE:-false}"
+    volumes:
+      # named volume: artifacts stay encrypted even on the host disk
+      - pii_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  pii_data:
+    name: pii_remover_data

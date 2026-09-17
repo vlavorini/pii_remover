@@ -1,0 +1,29 @@
+# ── secrets ───────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+data/
+*.enc
+*.key
+
+# ── python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── node (none expected, kept for safety) ─────────────────
+node_modules/
+
+# ── editors / os ──────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
